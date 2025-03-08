@@ -17,10 +17,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install System Dependencies
         run: |
-          sudo apt update && sudo apt install -y python3-pip clang lld llvm cmake ninja-build curl
-          sudo apt install -y python3-distutils python3-venv git
+          sudo apt update
+          sudo apt install -y python3 python3-pip python3-venv git clang lld llvm cmake ninja-build curl
+
+      - name: Verify Python Installation
+        run: |
+          python3 --version
+          pip3 --version
 
       - name: Clone V8 Repository
         run: |
@@ -29,15 +34,12 @@ jobs:
           ls -l build/ || echo "No build/ directory found!"
           ls -l || echo "Listing v8 root directory..."
 
-      - name: Install Gclient
+      - name: Install Gclient & Sync Dependencies
         run: |
           sudo apt install -y depot-tools
           echo 'export PATH=$PATH:$HOME/depot_tools' >> ~/.bashrc
           source ~/.bashrc
           gclient --version || echo "Gclient is not installed correctly!"
-
-      - name: Sync V8 Dependencies
-        run: |
           cd v8
           gclient sync || echo "Gclient sync failed!"
 
