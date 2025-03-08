@@ -2,9 +2,9 @@ name: V8 Environment Setup & Build
 
 on:
   push:
-    branches: [main]
+    branches: [multicore]
   pull_request:
-    branches: [main]
+    branches: [multicore]
 
 jobs:
   setup-and-build-v8:
@@ -34,8 +34,8 @@ jobs:
         run: ./build/install-build-deps.sh
         working-directory: v8
 
-      - name: Build V8
+      - name: Build V8 using all available cores
         run: |
           gn gen out.gn/x64.release --args='is_debug=false target_cpu="x64"'
-          ninja -C out.gn/x64.release
+          ninja -C out.gn/x64.release -j$(nproc)
         working-directory: v8
