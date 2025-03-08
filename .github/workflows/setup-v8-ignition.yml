@@ -2,11 +2,9 @@ name: V8 Environment Setup & Code Familiarization
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -14,59 +12,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Install System Dependencies
         run: |
           sudo apt update
-          sudo apt install -y python3 python3-pip python3-venv git clang lld llvm cmake ninja-build curl
+          sudo apt install -y build-essential curl libcap-dev libncurses5-dev python3 python3-pip python3-setuptools python3-wheel unzip zlib1g-dev llvm-11 llvm-11-dev clang-11 python3-dev libffi-dev libssl-dev
 
-      - name: Verify Python Installation
-        run: |
-          python3 --version
-          pip3 --version
-
-      - name: Install Depot Tools (Google's V8 Dependency)
+      - name: Install Depot Tools
         run: |
           git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $HOME/depot_tools
-          echo 'export PATH=$PATH:$HOME/depot_tools' >> ~/.bashrc
-          source ~/.bashrc
-          gclient --version || echo "Gclient is not installed correctly!"
+          echo 'export PATH=$PATH:$HOME/depot_tools' >> $HOME/.bashrc
+          source $HOME/.bashrc
+          gclient --version
 
       - name: Clone V8 Repository
         run: |
           git clone https://chromium.googlesource.com/v8/v8
           cd v8
-          ls -l || echo "Listing v8 root directory..."
-
-      - name: Sync V8 Dependencies
-        run: |
-          cd v8
-          gclient sync || echo "Gclient sync failed!"
-
-      - name: Install Build Dependencies (if available)
-        run: |
-          cd v8
-          if [ -f build/install-build-deps.sh ]; then
-            chmod +x build/install-build-deps.sh
-            ./build/install-build-deps.sh
-          else
-            echo "WARNING: install-build-deps.sh not found!"
-          fi
+          gclient sync
 
       - name: Build V8
         run: |
           cd v8
-          tools/dev/gm.py x64.release || echo "V8 build failed!"
+          tools/dev/gm.py x64.release
 
-      - name: Verify V8 Installation
+      - name: Run V8 Tests
         run: |
           cd v8
-          tools/run-tests.py --outdir=out/x64.release || echo "V8 test suite failed!"
+          tools/run-tests.py --outdir=out/x64.release
 
-      - name: Install Symbolic Execution Tools
+      - name: Install Angr
         run: |
-          pip install angr
-          sudo apt install -y klee
+          pip3 install angr
+
+      - name: Install KLEE
+        run: |
+          git clone https://github.com/klee/klee.git
+          cd klee
+          mkdir build
+          cd build
+          cmake .. -DENABLE_SOLVERS=STP -DENABLE_POSIX_RUNTIME=ON -DLLVM_CONFIG_BINARY=$(which llvm-config-11)
+          make -j$(nproc)
+          sudo make install
+          klee --version
+
+      - name: Install QSYM
+        run: |
           git clone https://github.com/sslab-gatech/qsym.git
+          cd qsym
+          pip3 install -r requirements.txt
+          sudo python3 setup.py install
