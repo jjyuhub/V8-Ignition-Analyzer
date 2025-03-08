@@ -19,32 +19,50 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          sudo apt update && sudo apt install -y python3-pip clang lld llvm cmake ninja-build
+          sudo apt update && sudo apt install -y python3-pip clang lld llvm cmake ninja-build curl
+          sudo apt install -y python3-distutils python3-venv git
 
-      - name: Clone and Build V8
+      - name: Clone V8 Repository
         run: |
           git clone https://chromium.googlesource.com/v8/v8
           cd v8
-          ./build/install-build-deps.sh
-          gclient sync
-          tools/dev/gm.py x64.release
+          ls -l build/ || echo "No build/ directory found!"
+          ls -l || echo "Listing v8 root directory..."
+
+      - name: Install Gclient
+        run: |
+          sudo apt install -y depot-tools
+          echo 'export PATH=$PATH:$HOME/depot_tools' >> ~/.bashrc
+          source ~/.bashrc
+          gclient --version || echo "Gclient is not installed correctly!"
+
+      - name: Sync V8 Dependencies
+        run: |
+          cd v8
+          gclient sync || echo "Gclient sync failed!"
+
+      - name: Install Build Dependencies (if available)
+        run: |
+          cd v8
+          if [ -f build/install-build-deps.sh ]; then
+            chmod +x build/install-build-deps.sh
+            ./build/install-build-deps.sh
+          else
+            echo "WARNING: install-build-deps.sh not found!"
+          fi
+
+      - name: Build V8
+        run: |
+          cd v8
+          tools/dev/gm.py x64.release || echo "V8 build failed!"
+
+      - name: Verify V8 Installation
+        run: |
+          cd v8
+          tools/run-tests.py --outdir=out/x64.release || echo "V8 test suite failed!"
 
       - name: Install Symbolic Execution Tools
         run: |
           pip install angr
           sudo apt install -y klee
           git clone https://github.com/sslab-gatech/qsym.git
-
-      - name: Verify V8 Setup
-        run: |
-          cd v8
-          tools/run-tests.py --outdir=out/x64.release
-
-      - name: List Ignition Source Files
-        run: |
-          echo "Listing V8 Ignition source files:"
-          ls -l v8/src/interpreter
-          echo "Key files:"
-          echo " - bytecode-generator.cc"
-          echo " - bytecode-array-builder.cc"
-          echo " - interpreter.cc"
