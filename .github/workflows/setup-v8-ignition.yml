@@ -27,19 +27,21 @@ jobs:
           python3 --version
           pip3 --version
 
+      - name: Install Depot Tools (Google's V8 Dependency)
+        run: |
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $HOME/depot_tools
+          echo 'export PATH=$PATH:$HOME/depot_tools' >> ~/.bashrc
+          source ~/.bashrc
+          gclient --version || echo "Gclient is not installed correctly!"
+
       - name: Clone V8 Repository
         run: |
           git clone https://chromium.googlesource.com/v8/v8
           cd v8
-          ls -l build/ || echo "No build/ directory found!"
           ls -l || echo "Listing v8 root directory..."
 
-      - name: Install Gclient & Sync Dependencies
+      - name: Sync V8 Dependencies
         run: |
-          sudo apt install -y depot-tools
-          echo 'export PATH=$PATH:$HOME/depot_tools' >> ~/.bashrc
-          source ~/.bashrc
-          gclient --version || echo "Gclient is not installed correctly!"
           cd v8
           gclient sync || echo "Gclient sync failed!"
 
