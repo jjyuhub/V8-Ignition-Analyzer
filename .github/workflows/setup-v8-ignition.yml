@@ -2,50 +2,40 @@ name: V8 Environment Setup & Build
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
+    branches: [main]
 
 jobs:
   setup-and-build-v8:
     runs-on: ubuntu-latest
     env:
-      DEPOT_TOOLS_UPDATE: '0'  # Prevents depot_tools from auto-updating
+      DEPOT_TOOLS_UPDATE: 0
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+    - name: Install dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git python3 python3-pip python-is-python3
+        sudo apt install -y llvm clang cmake ninja-build
 
-      - name: Install Dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git python3 python3-pip lsb-release wget g++ pkg-config
-          sudo apt install -y clang llvm
+    - name: Clone depot_tools
+      run: |
+        git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        echo "::add-path::$(pwd)/depot_tools"
 
-      - name: Clone Depot Tools
-        run: |
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-          echo 'export PATH=$PATH:$(pwd)/depot_tools' >> $GITHUB_ENV
+    - name: Fetch V8
+      run: |
+        mkdir v8
+        cd v8
+        fetch v8
+        gclient sync
 
-      - name: Fetch V8
-        run: |
-          mkdir v8
-          cd v8
-          fetch v8
-          cd v8
-          gclient sync
-
-      - name: Build V8
-        run: |
-          cd v8
-          tools/dev/v8gen.py x64.release
-          ninja -C out.gn/x64.release
-
-      - name: Run Tests
-        run: |
-          cd v8
-          tools/run-tests.py --outdir=out.gn/x64.release
+    - name: Build V8
+      run: |
+        cd v8
+        tools/dev/gm.py x64.release
+        tools/run-tests.py --outdir=out/x64.release
