@@ -1,0 +1,50 @@
+name: V8 Environment Setup & Code Familiarization
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  setup-v8:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update && sudo apt install -y python3-pip clang lld llvm cmake ninja-build
+
+      - name: Clone and Build V8
+        run: |
+          git clone https://chromium.googlesource.com/v8/v8
+          cd v8
+          ./build/install-build-deps.sh
+          gclient sync
+          tools/dev/gm.py x64.release
+
+      - name: Install Symbolic Execution Tools
+        run: |
+          pip install angr
+          sudo apt install -y klee
+          git clone https://github.com/sslab-gatech/qsym.git
+
+      - name: Verify V8 Setup
+        run: |
+          cd v8
+          tools/run-tests.py --outdir=out/x64.release
+
+      - name: List Ignition Source Files
+        run: |
+          echo "Listing V8 Ignition source files:"
+          ls -l v8/src/interpreter
+          echo "Key files:"
+          echo " - bytecode-generator.cc"
+          echo " - bytecode-array-builder.cc"
+          echo " - interpreter.cc"
