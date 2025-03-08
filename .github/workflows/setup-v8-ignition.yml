@@ -1,66 +1,51 @@
-name: V8 Environment Setup & Code Familiarization
+name: V8 Environment Setup & Build
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
-  workflow_dispatch:
 
 jobs:
-  setup-v8:
+  setup-and-build-v8:
     runs-on: ubuntu-latest
-
+    env:
+      DEPOT_TOOLS_UPDATE: '0'  # Prevents depot_tools from auto-updating
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Install Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential curl libcap-dev libncurses5-dev python3 python3-pip python3-setuptools python3-wheel unzip zlib1g-dev llvm-11 llvm-11-dev clang-11 python3-dev libffi-dev libssl-dev
+          sudo apt install -y git python3 python3-pip lsb-release wget g++ pkg-config
+          sudo apt install -y clang llvm
 
-      - name: Install Depot Tools
+      - name: Clone Depot Tools
         run: |
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git $HOME/depot_tools
-          echo 'export PATH=$PATH:$HOME/depot_tools' >> $HOME/.bashrc
-          source $HOME/.bashrc
-          gclient --version
+          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+          echo 'export PATH=$PATH:$(pwd)/depot_tools' >> $GITHUB_ENV
 
-      - name: Clone V8 Repository
+      - name: Fetch V8
         run: |
-          git clone https://chromium.googlesource.com/v8/v8
+          mkdir v8
+          cd v8
+          fetch v8
           cd v8
           gclient sync
 
       - name: Build V8
         run: |
           cd v8
-          tools/dev/gm.py x64.release
+          tools/dev/v8gen.py x64.release
+          ninja -C out.gn/x64.release
 
-      - name: Run V8 Tests
+      - name: Run Tests
         run: |
           cd v8
-          tools/run-tests.py --outdir=out/x64.release
-
-      - name: Install Angr
-        run: |
-          pip3 install angr
-
-      - name: Install KLEE
-        run: |
-          git clone https://github.com/klee/klee.git
-          cd klee
-          mkdir build
-          cd build
-          cmake .. -DENABLE_SOLVERS=STP -DENABLE_POSIX_RUNTIME=ON -DLLVM_CONFIG_BINARY=$(which llvm-config-11)
-          make -j$(nproc)
-          sudo make install
-          klee --version
-
-      - name: Install QSYM
-        run: |
-          git clone https://github.com/sslab-gatech/qsym.git
-          cd qsym
-          pip3 install -r requirements.txt
-          sudo python3 setup.py install
+          tools/run-tests.py --outdir=out.gn/x64.release
