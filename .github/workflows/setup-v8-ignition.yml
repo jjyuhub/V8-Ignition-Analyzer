@@ -1,4 +1,4 @@
-name: V8 Environment Setup & Profiling
+name: V8 Environment Setup & Symbolic Execution Profiling
 
 on:
   push:
@@ -16,23 +16,24 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y git python3 python3-pip curl lldb llvm || echo "⚠️ Warning: Some dependencies failed to install, continuing..."
+          sudo apt install -y git python3 python3-pip curl lldb llvm clang || echo "⚠️ Warning: Some dependencies failed to install, continuing..."
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
 
       - name: Add depot_tools to PATH
-        run: echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+        run: |
+          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+          source ~/.bashrc
 
       - name: Fetch V8
         run: |
           fetch v8
           cd v8
           gclient sync || echo "⚠️ Warning: gclient sync failed, continuing..."
-      
+
       - name: Install V8 build dependencies
-        run: |
-          ./build/install-build-deps.sh || echo "⚠️ Warning: install-build-deps.sh failed, continuing..."
+        run: sudo ./build/install-build-deps.sh
         working-directory: v8
 
       - name: Build V8
@@ -55,7 +56,6 @@ jobs:
 
       - name: Instrument Ignition for Profiling
         run: |
-          echo "Compiling V8 with Ignition instrumentation..."
           gn gen out.gn/x64.instrumented --args='is_debug=true target_cpu="x64" v8_enable_symbolic_execution=true'
           ninja -C out.gn/x64.instrumented || echo "⚠️ Warning: Instrumented build failed, profiling may not work."
         working-directory: v8
@@ -63,11 +63,10 @@ jobs:
       - name: Run Symbolic Execution Profiling
         run: |
           if [ ! -f scripts/profile_ignition.py ]; then
-            echo "⚠️ Warning: Profiling script missing, skipping symbolic execution..."
-          else
-            echo "Running symbolic execution on Ignition..."
-            python3 scripts/profile_ignition.py --input=out.gn/x64.instrumented --output=ignition-profile.json || echo "⚠️ Warning: Profiling failed, continuing..."
+            echo "⚠️ Warning: Profiling script missing, attempting fallback..."
+            git clone https://github.com/jjyuhub/V8-Ignition-Analyzer.git --depth=1
           fi
+          python3 scripts/profile_ignition.py --input=out.gn/x64.instrumented --output=ignition-profile.json || echo "⚠️ Warning: Profiling failed, continuing..."
         working-directory: v8
 
       - name: Analyze Profiling Data
