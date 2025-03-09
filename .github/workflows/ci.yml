@@ -1,0 +1,19 @@
+name: V8 CI Pipeline
+
+on:
+  push:
+    branches: [splityml]
+  pull_request:
+    branches: [splityml]
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml  # Calls the build process
+
+  test:
+    needs: build
+    uses: ./.github/workflows/test.yml   # Runs tests after build
+
+  profiling:
+    needs: test
+    uses: ./.github/workflows/profiling.yml # Runs profiling after tests
