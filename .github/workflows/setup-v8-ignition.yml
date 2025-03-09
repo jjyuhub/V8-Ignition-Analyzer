@@ -1,4 +1,4 @@
-name: V8 Environment Setup & Symbolic Execution Profiling
+name: V8 Environment Setup & Profiling
 
 on:
   push:
@@ -11,12 +11,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y git python3 python3-pip curl lldb llvm clang || echo "⚠️ Warning: Some dependencies failed to install, continuing..."
+          sudo apt install -y git python3 python3-pip curl lldb llvm clang || { echo "❌ Dependency installation failed"; exit 1; }
+
+      - name: Validate Clang Installation
+        run: |
+          if ! command -v clang &> /dev/null; then
+            echo "❌ Clang installation failed!"
+            exit 1
+          fi
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -24,58 +31,76 @@ jobs:
       - name: Add depot_tools to PATH
         run: |
           echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
-          source ~/.bashrc
+          export PATH="${{ github.workspace }}/depot_tools:$PATH"
 
-      - name: Fetch V8
+      - name: Fetch V8 with Retry
         run: |
-          fetch v8
+          retry() {
+            local n=1
+            local max=3
+            local delay=5
+            while true; do
+              "$@" && break || {
+                if [[ $n -lt $max ]]; then
+                  ((n++))
+                  echo "❌ Attempt $n/$max failed! Retrying in $delay seconds..."
+                  sleep $delay
+                else
+                  echo "❌ Maximum attempts reached. Exiting..."
+                  exit 1
+                fi
+              }
+            done
+          }
+          retry fetch v8
           cd v8
-          gclient sync || echo "⚠️ Warning: gclient sync failed, continuing..."
+          retry gclient sync
 
       - name: Install V8 build dependencies
-        run: sudo ./build/install-build-deps.sh
+        run: sudo ./build/install-build-deps.sh || { echo "❌ Failed to install V8 build dependencies"; exit 1; }
         working-directory: v8
 
       - name: Build V8
         run: |
           gn gen out.gn/x64.release --args='is_debug=false target_cpu="x64"'
-          ninja -C out.gn/x64.release || echo "⚠️ Warning: V8 build failed, profiling may not work."
+          ninja -C out.gn/x64.release || { echo "❌ V8 build failed"; exit 1; }
         working-directory: v8
 
       - name: Run Ignition Tests
         run: |
-          tools/run-tests.py --outdir=out.gn/x64.release interpreter/ || echo "⚠️ Warning: Ignition tests failed, continuing..."
+          tools/run-tests.py --outdir=out.gn/x64.release interpreter/ || { echo "❌ Ignition tests failed"; exit 1; }
         working-directory: v8
 
       - name: Install Symbolic Execution Tools
         run: |
-          pip install angr || echo "⚠️ Warning: Angr installation failed, continuing..."
-          sudo apt install -y llvm klee || echo "⚠️ Warning: KLEE installation failed, continuing..."
-          git clone https://github.com/sslab-gatech/qsym.git || echo "⚠️ Warning: QSYM clone failed, continuing..."
+          pip install angr || { echo "❌ Angr installation failed"; exit 1; }
+          sudo apt install -y llvm klee || { echo "❌ KLEE installation failed"; exit 1; }
+          git clone https://github.com/sslab-gatech/qsym.git || { echo "❌ QSYM clone failed"; exit 1; }
         working-directory: v8
 
       - name: Instrument Ignition for Profiling
         run: |
           gn gen out.gn/x64.instrumented --args='is_debug=true target_cpu="x64" v8_enable_symbolic_execution=true'
-          ninja -C out.gn/x64.instrumented || echo "⚠️ Warning: Instrumented build failed, profiling may not work."
+          ninja -C out.gn/x64.instrumented || { echo "❌ Instrumented build failed"; exit 1; }
         working-directory: v8
 
       - name: Run Symbolic Execution Profiling
         run: |
           if [ ! -f scripts/profile_ignition.py ]; then
-            echo "⚠️ Warning: Profiling script missing, attempting fallback..."
-            git clone https://github.com/jjyuhub/V8-Ignition-Analyzer.git --depth=1
+            echo "❌ Profiling script missing!"
+            exit 1
           fi
-          python3 scripts/profile_ignition.py --input=out.gn/x64.instrumented --output=ignition-profile.json || echo "⚠️ Warning: Profiling failed, continuing..."
+          echo "Running symbolic execution on Ignition..."
+          python3 scripts/profile_ignition.py --input=out.gn/x64.instrumented --output=ignition-profile.json || { echo "❌ Profiling failed"; exit 1; }
         working-directory: v8
 
       - name: Analyze Profiling Data
         run: |
           if [ ! -f out.gn/x64.instrumented/ignition-profile.json ]; then
-            echo "⚠️ Warning: Profiling data missing, skipping analysis..."
-          else
-            python3 scripts/analyze_symbolic_execution.py --input=out.gn/x64.instrumented/ignition-profile.json --output=symbolic-analysis.txt || echo "⚠️ Warning: Analysis failed, continuing..."
+            echo "❌ Profiling data missing!"
+            exit 1
           fi
+          python3 scripts/analyze_symbolic_execution.py --input=out.gn/x64.instrumented/ignition-profile.json --output=symbolic-analysis.txt || { echo "❌ Analysis failed"; exit 1; }
         working-directory: v8
 
       - name: Upload Profiling Results
@@ -83,4 +108,3 @@ jobs:
         with:
           name: ignition-symbolic-profile
           path: v8/out.gn/x64.instrumented/symbolic-analysis.txt
-        if: always()
