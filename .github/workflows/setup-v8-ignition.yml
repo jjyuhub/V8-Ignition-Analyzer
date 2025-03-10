@@ -14,20 +14,19 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Ensure Bash and Core Utilities are Installed
+      - name: Verify Bash Installation
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bash coreutils
-          echo "✅ Installed Bash and Core Utilities."
-          if ! command -v bash &> /dev/null; then
-            echo "❌ Bash installation failed!"
+          if command -v bash &> /dev/null; then
+            echo "✅ Bash is installed at $(which bash)"
+          else
+            echo "❌ Bash is not installed!"
             exit 1
           fi
-          if ! command -v sleep &> /dev/null; then
-            echo "❌ Sleep command is not available!"
-            exit 1
-          fi
-        shell: sh
+        shell: bash
+
+      - name: Install Core Utilities
+        run: sudo apt-get install -y coreutils
+        shell: bash
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -35,49 +34,31 @@ jobs:
 
       - name: Add depot_tools to PATH
         run: |
-          echo "export PATH=${{ github.workspace }}/depot_tools:$PATH" >> ~/.bashrc
+          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
           export PATH="${{ github.workspace }}/depot_tools:$PATH"
-          source ~/.bashrc
-          echo "✅ Added depot_tools to PATH."
         shell: bash
 
       - name: Fetch V8 with Retry
         run: |
-          retry() {
-            local n=1
-            local max=3
-            local delay=5
-            while true; do
-              "$@" && break || {
-                if [[ $n -lt $max ]]; then
-                  ((n++))
-                  echo "❌ Attempt $n/$max failed! Retrying in $delay seconds..."
-                  sleep $delay
-                else
-                  echo "❌ Maximum attempts reached. Exiting..."
-                  exit 1
-                fi
-              }
-            done
-          }
-          retry fetch v8
+          for i in {1..3}; do
+            fetch v8 && break || {
+              echo "Attempt $i failed. Retrying in 5 seconds..."
+              sleep 5
+            }
+          done
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
         shell: bash
 
       - name: Sync V8 Dependencies
-        run: |
-          retry gclient sync
-          echo "✅ V8 dependencies synchronized."
+        run: gclient sync
         working-directory: v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
         shell: bash
 
       - name: Install V8 Build Dependencies
-        run: |
-          sudo ./build/install-build-deps.sh
-          echo "✅ Installed V8 build dependencies."
+        run: sudo ./build/install-build-deps.sh
         working-directory: v8
         shell: bash
 
@@ -85,14 +66,11 @@ jobs:
         run: |
           gn gen out.gn/x64.release --args='is_debug=false target_cpu="x64"'
           ninja -C out.gn/x64.release d8 cctest
-          echo "✅ V8 built successfully."
         working-directory: v8
         shell: bash
 
       - name: Run cctest Suite
-        run: |
-          out.gn/x64.release/cctest --gtest_filter=Interpreter*
-          echo "✅ cctest suite completed."
+        run: out.gn/x64.release/cctest --gtest_filter=Interpreter*
         working-directory: v8
         shell: bash
 
@@ -100,7 +78,6 @@ jobs:
         run: |
           if [ -d "test/interpreter" ]; then
             tools/run-tests.py --outdir=out.gn/x64.release interpreter/
-            echo "✅ Interpreter tests completed."
           else
             echo "❌ Interpreter test suite not found!"
             exit 1
@@ -109,9 +86,7 @@ jobs:
         shell: bash
 
       - name: Run mjsunit Tests
-        run: |
-          tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
-          echo "✅ mjsunit tests completed."
+        run: tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
         working-directory: v8
         shell: bash
 
@@ -119,7 +94,6 @@ jobs:
         run: |
           tools/run-tests.py --outdir=out.gn/x64.release --download-data test262
           tools/run-tests.py --outdir=out.gn/x64.release test262
-          echo "✅ Test262 suite completed."
         working-directory: v8
         shell: bash
 
