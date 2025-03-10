@@ -27,17 +27,10 @@ jobs:
             exit 1
           fi
 
-          if command -v sleep &> /dev/null; then
-            echo "✅ Sleep command is available"
-          else
-            echo "❌ Sleep command not found!"
-            exit 1
-          fi
+          # Remove sleep command dependency check as it's no longer needed
 
-          export PATH="/usr/bin:$PATH"
-          echo "export PATH=/usr/bin:$PATH" >> ~/.bashrc
-          . ~/.bashrc  # ✅ FIX: Replaces `source ~/.bashrc`
-        shell: sh
+          echo "PATH=/usr/bin:$PATH" >> $GITHUB_ENV
+        shell: bash
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -45,90 +38,102 @@ jobs:
 
       - name: Add depot_tools to PATH
         run: |
-          echo "export PATH=${{ github.workspace }}/depot_tools:$PATH" >> ~/.bashrc
-          export PATH="${{ github.workspace }}/depot_tools:$PATH"
-          . ~/.bashrc  # ✅ FIX: Replaces `source ~/.bashrc`
+          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
           echo "✅ Added depot_tools to PATH."
         shell: bash
 
       - name: Fetch V8 with Retry
         run: |
-          retry() {
-            local n=1
-            local max=3
-            while true; do
-              "$@" && break || {
-                if [[ $n -lt $max ]]; then
-                  ((n++))
-                  echo "❌ Attempt $n/$max failed! Retrying..."
-                else
-                  echo "❌ Maximum attempts reached. Exiting..."
-                  exit 1
-                fi
-              }
-            done
-          }
-          retry fetch v8
-        env:
-          PATH: "${{ github.workspace }}/depot_tools:${PATH}"
+          retry_count=0
+          max_retries=3
+          
+          until [ $retry_count -ge $max_retries ]
+          do
+            fetch v8 && break
+            retry_count=$((retry_count+1))
+            echo "❌ Attempt $retry_count/$max_retries failed! Retrying..."
+          done
+          
+          if [ $retry_count -ge $max_retries ]; then
+            echo "❌ Maximum attempts reached. Exiting..."
+            exit 1
+          fi
         shell: bash
 
       - name: Sync V8 Dependencies
-        run: |
-          retry gclient sync
-          echo "✅ V8 dependencies synchronized."
         working-directory: v8
-        env:
-          PATH: "${{ github.workspace }}/depot_tools:${PATH}"
+        run: |
+          retry_count=0
+          max_retries=3
+          
+          until [ $retry_count -ge $max_retries ]
+          do
+            gclient sync && break
+            retry_count=$((retry_count+1))
+            echo "❌ Attempt $retry_count/$max_retries failed! Retrying..."
+          done
+          
+          if [ $retry_count -ge $max_retries ]; then
+            echo "❌ Maximum attempts reached. Exiting..."
+            exit 1
+          fi
+          
+          echo "✅ V8 dependencies synchronized."
         shell: bash
 
       - name: Install V8 Build Dependencies
-        run: |
-          sudo ./build/install-build-deps.sh
-          echo "✅ Installed V8 build dependencies."
         working-directory: v8
+        run: |
+          sudo ./build/install-build-deps.sh --no-prompt
+          echo "✅ Installed V8 build dependencies."
         shell: bash
 
       - name: Build V8
+        working-directory: v8
         run: |
           gn gen out.gn/x64.release --args='is_debug=false target_cpu="x64"'
           ninja -C out.gn/x64.release d8 cctest
           echo "✅ V8 built successfully."
-        working-directory: v8
         shell: bash
 
       - name: Run cctest Suite
-        run: |
-          out.gn/x64.release/cctest --gtest_filter=Interpreter*
-          echo "✅ cctest suite completed."
         working-directory: v8
+        run: |
+          ./out.gn/x64.release/cctest --gtest_filter=Interpreter*
+          echo "✅ cctest suite completed."
         shell: bash
 
       - name: Run Ignition Tests
+        working-directory: v8
         run: |
           if [ -d "test/interpreter" ]; then
-            tools/run-tests.py --outdir=out.gn/x64.release interpreter/
+            ./tools/run-tests.py --outdir=out.gn/x64.release interpreter/
             echo "✅ Interpreter tests completed."
           else
-            echo "❌ Interpreter test suite not found!"
-            exit 1
+            echo "Warning: Interpreter test directory not found. Checking for alternative location..."
+            if [ -d "test/ignition" ]; then
+              ./tools/run-tests.py --outdir=out.gn/x64.release ignition/
+              echo "✅ Ignition tests completed."
+            else
+              echo "❌ Interpreter/Ignition test suite not found!"
+              exit 1
+            fi
           fi
-        working-directory: v8
         shell: bash
 
       - name: Run mjsunit Tests
-        run: |
-          tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
-          echo "✅ mjsunit tests completed."
         working-directory: v8
+        run: |
+          ./tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
+          echo "✅ mjsunit tests completed."
         shell: bash
 
       - name: Run Test262 Suite
-        run: |
-          tools/run-tests.py --outdir=out.gn/x64.release --download-data test262
-          tools/run-tests.py --outdir=out.gn/x64.release test262
-          echo "✅ Test262 suite completed."
         working-directory: v8
+        run: |
+          ./tools/run-tests.py --outdir=out.gn/x64.release --download-data test262
+          ./tools/run-tests.py --outdir=out.gn/x64.release test262
+          echo "✅ Test262 suite completed."
         shell: bash
 
       - name: Upload Test Results
@@ -136,3 +141,4 @@ jobs:
         with:
           name: v8-test-results
           path: v8/out.gn/x64.release/test-results.xml
+          if-no-files-found: warn
