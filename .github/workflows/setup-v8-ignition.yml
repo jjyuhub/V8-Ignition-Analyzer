@@ -37,11 +37,11 @@ jobs:
           export PATH="/usr/bin:$PATH"
           echo "export PATH=/usr/bin:$PATH" >> ~/.bashrc
           source ~/.bashrc
-        shell: /bin/sh
+        shell: sh  # ✅ Corrected shell
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Add depot_tools to PATH
         run: |
@@ -49,7 +49,7 @@ jobs:
           export PATH="${{ github.workspace }}/depot_tools:$PATH"
           source ~/.bashrc
           echo "✅ Added depot_tools to PATH."
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Fetch V8 with Retry
         run: |
@@ -73,7 +73,7 @@ jobs:
           retry fetch v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Sync V8 Dependencies
         run: |
@@ -82,14 +82,14 @@ jobs:
         working-directory: v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Install V8 Build Dependencies
         run: |
           sudo ./build/install-build-deps.sh
           echo "✅ Installed V8 build dependencies."
         working-directory: v8
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Build V8
         run: |
@@ -97,14 +97,14 @@ jobs:
           ninja -C out.gn/x64.release d8 cctest
           echo "✅ V8 built successfully."
         working-directory: v8
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Run cctest Suite
         run: |
           out.gn/x64.release/cctest --gtest_filter=Interpreter*
           echo "✅ cctest suite completed."
         working-directory: v8
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Run Ignition Tests
         run: |
@@ -116,14 +116,14 @@ jobs:
             exit 1
           fi
         working-directory: v8
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Run mjsunit Tests
         run: |
           tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
           echo "✅ mjsunit tests completed."
         working-directory: v8
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Run Test262 Suite
         run: |
@@ -131,7 +131,7 @@ jobs:
           tools/run-tests.py --outdir=out.gn/x64.release test262
           echo "✅ Test262 suite completed."
         working-directory: v8
-        shell: /usr/bin/bash
+        shell: bash
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
