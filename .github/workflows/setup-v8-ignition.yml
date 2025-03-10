@@ -1,4 +1,4 @@
-name: V8 Interpreter Comprehensive Testing
+name: V8 Interpreter Testing
 
 on:
   push:
@@ -9,73 +9,106 @@ on:
 jobs:
   build-and-test-v8:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Install Dependencies (Ensure Bash Exists)
         run: |
-          set -e
           sudo apt update
-          sudo apt install -y git python3 python3-pip curl lldb llvm clang build-essential
+          sudo apt install -y bash git python3 python3-pip curl lldb llvm clang build-essential
+          if ! command -v bash &> /dev/null; then
+            echo "❌ Bash installation failed!"
+            exit 1
+          fi
+        shell: bash
 
       - name: Clone depot_tools
-        run: |
-          set -e
-          git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
+        shell: bash
 
       - name: Add depot_tools to PATH
         run: |
-          set -e
           echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+          export PATH="${{ github.workspace }}/depot_tools:$PATH"
+          source ~/.bashrc
+          command -v fetch || { echo "❌ fetch command not found!"; exit 1; }
+        shell: bash
 
-      - name: Fetch V8
+      - name: Fetch V8 with Retry
         run: |
-          set -e
-          fetch v8
+          retry() {
+            local n=1
+            local max=3
+            local delay=5
+            while true; do
+              "$@" && break || {
+                if [[ $n -lt $max ]]; then
+                  ((n++))
+                  echo "❌ Attempt $n/$max failed! Retrying in $delay seconds..."
+                  sleep $delay
+                else
+                  echo "❌ Maximum attempts reached. Exiting..."
+                  exit 1
+                fi
+              }
+            done
+          }
+          retry fetch v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
+        shell: bash
 
       - name: Sync V8 Dependencies
         run: |
-          set -e
-          gclient sync
+          retry gclient sync
         working-directory: v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
+        shell: bash
 
       - name: Install V8 Build Dependencies
-        run: |
-          set -e
-          sudo ./build/install-build-deps.sh
+        run: sudo ./build/install-build-deps.sh
         working-directory: v8
+        shell: bash
 
       - name: Build V8
         run: |
-          set -e
           gn gen out.gn/x64.release --args='is_debug=false target_cpu="x64"'
           ninja -C out.gn/x64.release d8 cctest
         working-directory: v8
+        shell: bash
 
-      - name: Run cctest Suite
+      - name: Run cctest Suite (Interpreter Tests)
         run: |
-          set -e
           out.gn/x64.release/cctest --gtest_filter=Interpreter*
         working-directory: v8
+        shell: bash
+
+      - name: Run Ignition Tests
+        run: |
+          if [ -d "test/interpreter" ]; then
+            tools/run-tests.py --outdir=out.gn/x64.release interpreter/
+          else
+            echo "❌ Interpreter test suite not found!"
+            exit 1
+          fi
+        working-directory: v8
+        shell: bash
 
       - name: Run mjsunit Tests
         run: |
-          set -e
           tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
         working-directory: v8
+        shell: bash
 
       - name: Run Test262 Suite
         run: |
-          set -e
           tools/run-tests.py --outdir=out.gn/x64.release --download-data test262
           tools/run-tests.py --outdir=out.gn/x64.release test262
         working-directory: v8
+        shell: bash
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
