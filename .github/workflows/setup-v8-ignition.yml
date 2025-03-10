@@ -36,8 +36,8 @@ jobs:
 
           export PATH="/usr/bin:$PATH"
           echo "export PATH=/usr/bin:$PATH" >> ~/.bashrc
-          source ~/.bashrc
-        shell: sh  # ✅ Corrected shell
+          . ~/.bashrc  # ✅ FIX: Replaces `source ~/.bashrc`
+        shell: sh
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -47,7 +47,7 @@ jobs:
         run: |
           echo "export PATH=${{ github.workspace }}/depot_tools:$PATH" >> ~/.bashrc
           export PATH="${{ github.workspace }}/depot_tools:$PATH"
-          source ~/.bashrc
+          . ~/.bashrc  # ✅ FIX: Replaces `source ~/.bashrc`
           echo "✅ Added depot_tools to PATH."
         shell: bash
 
@@ -56,13 +56,11 @@ jobs:
           retry() {
             local n=1
             local max=3
-            local delay=5
             while true; do
               "$@" && break || {
                 if [[ $n -lt $max ]]; then
                   ((n++))
-                  echo "❌ Attempt $n/$max failed! Retrying in $delay seconds..."
-                  sleep $delay
+                  echo "❌ Attempt $n/$max failed! Retrying..."
                 else
                   echo "❌ Maximum attempts reached. Exiting..."
                   exit 1
