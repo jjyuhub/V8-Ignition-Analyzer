@@ -14,88 +14,124 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Bash Installation
+      - name: Ensure Bash and Core Utilities are Installed
         run: |
-          if command -v bash &> /dev/null; then
-            echo "✅ Bash is installed at $(which bash)"
+          sudo apt-get update
+          sudo apt-get install -y bash coreutils
+          echo "✅ Installed Bash and Core Utilities."
+
+          if [ -x /usr/bin/bash ]; then
+            echo "✅ Bash is available at /usr/bin/bash"
           else
-            echo "❌ Bash is not installed!"
+            echo "❌ Bash not found!"
             exit 1
           fi
-        shell: bash
 
-      - name: Install Core Utilities
-        run: sudo apt-get install -y coreutils
-        shell: bash
+          if command -v sleep &> /dev/null; then
+            echo "✅ Sleep command is available"
+          else
+            echo "❌ Sleep command not found!"
+            exit 1
+          fi
+
+          export PATH="/usr/bin:$PATH"
+          echo "export PATH=/usr/bin:$PATH" >> ~/.bashrc
+          source ~/.bashrc
+        shell: /bin/sh
 
       - name: Clone depot_tools
         run: git clone https://chromium.googlesource.com/chromium/tools/depot_tools.git
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Add depot_tools to PATH
         run: |
-          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+          echo "export PATH=${{ github.workspace }}/depot_tools:$PATH" >> ~/.bashrc
           export PATH="${{ github.workspace }}/depot_tools:$PATH"
-        shell: bash
+          source ~/.bashrc
+          echo "✅ Added depot_tools to PATH."
+        shell: /usr/bin/bash
 
       - name: Fetch V8 with Retry
         run: |
-          for i in {1..3}; do
-            fetch v8 && break || {
-              echo "Attempt $i failed. Retrying in 5 seconds..."
-              sleep 5
-            }
-          done
+          retry() {
+            local n=1
+            local max=3
+            local delay=5
+            while true; do
+              "$@" && break || {
+                if [[ $n -lt $max ]]; then
+                  ((n++))
+                  echo "❌ Attempt $n/$max failed! Retrying in $delay seconds..."
+                  sleep $delay
+                else
+                  echo "❌ Maximum attempts reached. Exiting..."
+                  exit 1
+                fi
+              }
+            done
+          }
+          retry fetch v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Sync V8 Dependencies
-        run: gclient sync
+        run: |
+          retry gclient sync
+          echo "✅ V8 dependencies synchronized."
         working-directory: v8
         env:
           PATH: "${{ github.workspace }}/depot_tools:${PATH}"
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Install V8 Build Dependencies
-        run: sudo ./build/install-build-deps.sh
+        run: |
+          sudo ./build/install-build-deps.sh
+          echo "✅ Installed V8 build dependencies."
         working-directory: v8
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Build V8
         run: |
           gn gen out.gn/x64.release --args='is_debug=false target_cpu="x64"'
           ninja -C out.gn/x64.release d8 cctest
+          echo "✅ V8 built successfully."
         working-directory: v8
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Run cctest Suite
-        run: out.gn/x64.release/cctest --gtest_filter=Interpreter*
+        run: |
+          out.gn/x64.release/cctest --gtest_filter=Interpreter*
+          echo "✅ cctest suite completed."
         working-directory: v8
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Run Ignition Tests
         run: |
           if [ -d "test/interpreter" ]; then
             tools/run-tests.py --outdir=out.gn/x64.release interpreter/
+            echo "✅ Interpreter tests completed."
           else
             echo "❌ Interpreter test suite not found!"
             exit 1
           fi
         working-directory: v8
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Run mjsunit Tests
-        run: tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
+        run: |
+          tools/run-tests.py --outdir=out.gn/x64.release mjsunit/
+          echo "✅ mjsunit tests completed."
         working-directory: v8
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Run Test262 Suite
         run: |
           tools/run-tests.py --outdir=out.gn/x64.release --download-data test262
           tools/run-tests.py --outdir=out.gn/x64.release test262
+          echo "✅ Test262 suite completed."
         working-directory: v8
-        shell: bash
+        shell: /usr/bin/bash
 
       - name: Upload Test Results
         uses: actions/upload-artifact@v4
