@@ -13,10 +13,18 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Install Dependencies
+      - name: Ensure Bash and Core Utilities are Installed
         run: |
           sudo apt-get update
-          sudo apt-get install -y bash git python3 python3-pip curl lldb llvm clang build-essential coreutils
+          sudo apt-get install -y bash coreutils
+          if ! command -v bash &> /dev/null; then
+            echo "❌ Bash is not installed!"
+            exit 1
+          fi
+          if ! command -v sleep &> /dev/null; then
+            echo "❌ Sleep command is not available!"
+            exit 1
+          fi
         shell: bash
 
       - name: Clone depot_tools
@@ -24,7 +32,9 @@ jobs:
         shell: bash
 
       - name: Add depot_tools to PATH
-        run: echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+        run: |
+          echo "${{ github.workspace }}/depot_tools" >> $GITHUB_PATH
+          export PATH="${{ github.workspace }}/depot_tools:$PATH"
         shell: bash
 
       - name: Fetch V8 with Retry
