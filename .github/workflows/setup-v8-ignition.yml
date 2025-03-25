@@ -144,7 +144,6 @@ jobs:
       - name: Run Test262 Suite
         working-directory: v8
         run: |
-          ./tools/run-tests.py --outdir=out.gn/x64.release --download-data test262
           ./tools/run-tests.py --outdir=out.gn/x64.release test262
           echo "✅ Test262 suite completed."
         shell: bash
